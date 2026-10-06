@@ -1,6 +1,6 @@
 """
 main.py - TokenProxy Engine con persistencia en SQLite
-FastAPI + SQLite + Conexión a OpenRouter
+FastAPI + SQLite + Conexión upstream a OpenRouter
 """
 
 import os
@@ -14,10 +14,10 @@ from fastapi import FastAPI, Request, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-app = FastAPI(title="TokenProxy Engine con SQLite", version="1.1.0")
+app = FastAPI(title="TokenProxy Engine con SQLite", version="1.2.0")
 
 # -------------------------------------------------------------
-# Configuración de CORS para hercules.app
+# Configuración de CORS para conexión con hercules.app
 # -------------------------------------------------------------
 app.add_middleware(
     CORSMiddleware,
@@ -31,11 +31,11 @@ DB_FILE = "tokenproxy.db"
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 DEFAULT_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
 
-# Modelo predeterminado gratuito y validado en OpenRouter
-DEFAULT_ROUTED_MODEL = "google/gemini-2.0-flash-exp:free"
+# Modelo permanente y disponible gratuitamente en OpenRouter
+DEFAULT_ROUTED_MODEL = "meta-llama/llama-3.1-8b-instruct:free"
 
 # -------------------------------------------------------------
-# Inicialización y Conexión a Base de Datos (SQLite)
+# Inicialización y Conexión de Base de Datos SQLite
 # -------------------------------------------------------------
 def init_db():
     conn = sqlite3.connect(DB_FILE)
@@ -55,7 +55,7 @@ def init_db():
     """)
     cursor.execute("INSERT OR IGNORE INTO summary_metrics (id) VALUES (1)")
     
-    # 2. Historial de peticiones individuales para alimentar el dashboard
+    # 2. Historial de peticiones individuales (Feed para el Dashboard)
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS request_logs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -82,7 +82,7 @@ def init_db():
     conn.commit()
     conn.close()
 
-# Inicializar tablas al arrancar la aplicación
+# Ejecutar creación de tablas al inicio
 init_db()
 
 def get_db():
@@ -91,12 +91,12 @@ def get_db():
     return conn
 
 # -------------------------------------------------------------
-# Lógica de Compresión y Limpieza de Tokens
+# Algoritmo de Compresión Sintáctica
 # -------------------------------------------------------------
 def compress_text(text: str) -> str:
     """
-    Elimina fórmulas de cortesía, redundancias y espacios innecesarios
-    manteniendo íntegra la semántica de las instrucciones.
+    Elimina cortesías redundantes, fórmulas de relleno y espacios múltiples
+    preservando el 100% de la lógica y directrices del prompt.
     """
     patterns = [
         r"(?i)\b(por favor|amablemente|podrías|serías tan amable de)\b",
@@ -106,22 +106,21 @@ def compress_text(text: str) -> str:
     for p in patterns:
         text = re.sub(p, "", text)
     
-    # Normalizar espacios en blanco y saltos de línea repetidos
     text = re.sub(r"[ \t]+", " ", text)
     return re.sub(r"\n\s*\n+", "\n\n", text).strip()
 
 # -------------------------------------------------------------
-# Endpoints Públicos
+# Endpoints de la API
 # -------------------------------------------------------------
 
 @app.get("/")
 async def root():
-    return {"status": "ok", "service": "TokenProxy Engine", "version": "1.1.0"}
+    return {"status": "ok", "service": "TokenProxy Engine", "version": "1.2.0"}
 
 @app.get("/api/metrics")
 async def get_metrics():
     """
-    Endpoint consumido por hercules.app para actualizar contadores y registros en vivo.
+    Consulta SQLite y entrega los datos en tiempo real al panel de hercules.app.
     """
     conn = get_db()
     cursor = conn.cursor()
@@ -142,7 +141,7 @@ async def get_metrics():
 @app.post("/v1/chat/completions")
 async def chat_proxy(request: Request, authorization: str = Header(None)):
     """
-    Punto de entrada compatible con el SDK oficial de OpenAI y llamadas REST estándar.
+    Endpoint proxy compatible con OpenAI SDK y llamadas HTTP estándar.
     """
     payload = await request.json()
     messages = payload.get("messages", [])
@@ -152,10 +151,10 @@ async def chat_proxy(request: Request, authorization: str = Header(None)):
     client_ip = request.client.host if request.client else "unknown"
     now_str = datetime.datetime.utcnow().isoformat()
 
-    # 1. Medir caracteres y tokens brutos de entrada
+    # 1. Medir caracteres brutos de entrada
     orig_chars = sum(len(m.get("content", "")) for m in messages if isinstance(m.get("content"), str))
 
-    # 2. Compresión semántica de contexto
+    # 2. Compresión semántica
     for m in messages:
         if isinstance(m.get("content"), str):
             m["content"] = compress_text(m["content"])
@@ -165,7 +164,7 @@ async def chat_proxy(request: Request, authorization: str = Header(None)):
     saved_tokens = saved_chars // 4
     usd_saved = round(saved_tokens * 0.000002, 6)
 
-    # 3. Comprobación en caché persistente (SQLite)
+    # 3. Comprobar si ya existe en la caché persistente de SQLite
     cache_key = hashlib.sha256(str(messages).encode()).hexdigest()
     conn = get_db()
     cursor = conn.cursor()
@@ -197,7 +196,7 @@ async def chat_proxy(request: Request, authorization: str = Header(None)):
         cached_data["cached_by_proxy"] = True
         return JSONResponse(content=cached_data)
 
-    # 4. Normalización y Enrutamiento de Modelo
+    # 4. Enrutamiento del modelo
     key = authorization.replace("Bearer ", "") if authorization else DEFAULT_API_KEY
     headers = {
         "Authorization": f"Bearer {key}",
@@ -210,7 +209,7 @@ async def chat_proxy(request: Request, authorization: str = Header(None)):
     
     payload["model"] = target_model
 
-    # 5. Petición upstream a OpenRouter
+    # 5. Envío upstream a OpenRouter
     async with httpx.AsyncClient(timeout=60.0) as client:
         upstream = await client.post(OPENROUTER_URL, json=payload, headers=headers)
 
@@ -220,7 +219,7 @@ async def chat_proxy(request: Request, authorization: str = Header(None)):
 
     data = upstream.json()
 
-    # 6. Almacenamiento en caché y actualización de métricas en SQLite
+    # 6. Almacenar en caché y actualizar contadores en SQLite
     cursor.execute("""
         INSERT OR REPLACE INTO response_cache (cache_key, response_json, created_at)
         VALUES (?, ?, ?)
