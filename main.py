@@ -32,7 +32,7 @@ app.add_middleware(
 
 DB_FILE = "tokenproxy.db"
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
-DEFAULT_ROUTED_MODEL = "meta-llama/llama-3.1-8b-instruct:free"
+DEFAULT_ROUTED_MODEL = "inclusionai/ling-3.1-flash"
 
 # -------------------------------------------------------------
 # Base de Datos SQLite Multi-Tenant
