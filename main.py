@@ -32,7 +32,7 @@ OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 DEFAULT_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
 
 # Modelo permanente y disponible gratuitamente en OpenRouter
-DEFAULT_ROUTED_MODEL = "inclusionai/ling-3.1-flash"
+DEFAULT_ROUTED_MODEL = "mistralai/mistral-nemo"
 
 # -------------------------------------------------------------
 # Inicialización y Conexión de Base de Datos SQLite
