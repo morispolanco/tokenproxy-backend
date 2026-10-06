@@ -175,7 +175,7 @@ async def chat_proxy(request: Request, authorization: str = Header(None)):
 
     target_model = payload.get("model")
     if target_model in ["auto", "smart-route", None]:
-        target_model = "google/gemini-flash-1.5"
+        target_model = "google/gemini-1.5-flash"
         payload["model"] = target_model
 
     async with httpx.AsyncClient(timeout=60.0) as client:
